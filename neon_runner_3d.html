@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>NEON RUNNER 3D</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050711;font-family:Arial,"Microsoft YaHei",sans-serif;color:#fff}
+#game{position:fixed;inset:0}canvas{display:block}
+.panel{position:fixed;background:rgba(8,12,28,.78);backdrop-filter:blur(12px);border:1px solid rgba(100,180,255,.25);border-radius:18px;box-shadow:0 12px 50px #0008}
+#menu{left:50%;top:50%;transform:translate(-50%,-50%);width:min(720px,92vw);padding:28px;text-align:center;z-index:5}
+h1{margin:0 0 4px;font-size:42px;letter-spacing:6px;background:linear-gradient(90deg,#57eaff,#b96cff,#ff4fd8);-webkit-background-clip:text;color:transparent}
+.sub{color:#91a5c9;margin-bottom:20px}
+#chars{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.char{width:145px;padding:13px;border:1px solid #33415f;border-radius:14px;background:#11182a;cursor:pointer;transition:.2s}
+.char:hover,.char.sel{border-color:#5ee7ff;transform:translateY(-3px);box-shadow:0 0 25px #37d9ff33}
+.avatar{height:72px;display:grid;place-items:center;font-size:44px}
+.char b{display:block}.char small{display:block;color:#8fa2c6;margin-top:4px;line-height:1.4}
+button{border:0;border-radius:12px;padding:13px 28px;background:linear-gradient(90deg,#16c8ff,#8b5cff);color:white;font-weight:700;font-size:16px;cursor:pointer;box-shadow:0 8px 25px #4a72ff44}
+button:hover{filter:brightness(1.15);transform:translateY(-1px)}
+#hud{position:fixed;left:18px;top:18px;z-index:3;display:none;min-width:260px;padding:13px 16px}
+.stat{display:flex;justify-content:space-between;gap:25px;margin:4px 0;color:#b9c8e6}.stat strong{color:#fff}
+.bar{height:8px;background:#202b43;border-radius:9px;overflow:hidden;margin-top:6px}.fill{height:100%;width:100%;background:linear-gradient(90deg,#34f5c5,#31a9ff)}
+#skill{position:fixed;right:20px;bottom:20px;z-index:3;display:none;text-align:center}
+#skillBtn{width:92px;height:92px;border-radius:50%;padding:0;font-size:12px;border:2px solid #74eaff}
+#skillCd{color:#9db0d2;margin-top:7px}
+#tip{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:3;color:#9fb1d0;background:#081025bb;padding:8px 15px;border-radius:20px;display:none}
+#gameover{left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,90vw);padding:30px;text-align:center;display:none;z-index:10}
+#gameover h2{font-size:34px;margin:0 0 8px}.result{color:#9db0d2;margin-bottom:20px}
+.badge{display:inline-block;padding:4px 8px;border-radius:8px;background:#1c2942;color:#7ceaff;font-size:12px;margin-top:5px}
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="menu" class="panel">
+<h1>NEON RUNNER</h1>
+<div class="sub">3D 未来都市 · 无限跑酷 · 技能与道具系统</div>
+<div id="chars"></div>
+<br>
+<button id="start">开始奔跑</button>
+<div style="margin-top:15px;color:#7184a8;font-size:13px">A / D 或 ← / → 换道　SPACE 跳跃　S 滑铲　E 释放技能</div>
+</div>
+
+<div id="hud" class="panel">
+<div class="stat"><span>距离</span><strong id="distance">0 m</strong></div>
+<div class="stat"><span>金币</span><strong id="coins">0</strong></div>
+<div class="stat"><span>速度</span><strong id="speed">1.0x</strong></div>
+<div class="stat"><span>生命</span><strong id="hpText">100</strong></div>
+<div class="bar"><div id="hp" class="fill"></div></div>
+<div style="margin-top:7px;color:#8397bd;font-size:12px" id="powerText">无道具</div>
+</div>
+
+<div id="skill">
+<button id="skillBtn">SKILL<br><b id="skillName">冲刺</b></button>
+<div id="skillCd">READY · [E]</div>
+</div>
+
+<div id="tip">← → 换道　SPACE 跳跃　S 滑铲　E 技能</div>
+
+<div id="gameover" class="panel">
+<h2>RUN OVER</h2>
+<div class="result">本次成绩：<b id="finalDistance">0</b> m · <b id="finalCoins">0</b> 金币</div>
+<button id="restart">重新开始</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const characters=[
+ {name:"NOVA",icon:"🧑‍🚀",color:0x36e6ff,skill:"时间减速",desc:"技能：短暂减慢世界速度"},
+ {name:"BLAZE",icon:"🏃",color:0xff4d6d,skill:"火焰冲刺",desc:"技能：高速冲刺并撞碎障碍"},
+ {name:"PHANTOM",icon:"🥷",color:0xa86cff,skill:"幽灵穿越",desc:"技能：短暂无视障碍"}
+];
+let selected=0;
+const chars=document.querySelector("#chars");
+characters.forEach((c,i)=>{
+ const d=document.createElement("div");d.className="char"+(i===0?" sel":"");
+ d.innerHTML=`<div class="avatar">${c.icon}</div><b>${c.name}</b><small>${c.skill}<br>${c.desc}</small>`;
+ d.onclick=()=>{selected=i;document.querySelectorAll(".char").forEach(x=>x.classList.remove("sel"));d.classList.add("sel")};
+ chars.appendChild(d);
+});
+
+let scene,camera,renderer,player,clock;
+let running=false,lane=0,targetLane=0,yVel=0,grounded=true,sliding=false;
+let distance=0,coins=0,hp=100,worldSpeed=0.45,spawnT=0,coinT=0;
+let objects=[],keys={},skillTimer=0,skillCooldown=0,shield=0,magnet=0,boost=0;
+const lanes=[-3,0,3];
+
+function init3D(){
+ scene=new THREE.Scene();
+ scene.fog=new THREE.Fog(0x070b18,18,105);
+ camera=new THREE.PerspectiveCamera(65,innerWidth/innerHeight,.1,300);
+ camera.position.set(0,4.2,9);camera.lookAt(0,1,-15);
+ renderer=new THREE.WebGLRenderer({antialias:true});
+ renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);
+ renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+ document.querySelector("#game").appendChild(renderer.domElement);
+ scene.add(new THREE.HemisphereLight(0x9fc8ff,0x080914,1.8));
+ const dl=new THREE.DirectionalLight(0xffffff,2.2);dl.position.set(5,12,8);dl.castShadow=true;scene.add(dl);
+ createCity(); createPlayer(); clock=new THREE.Clock();
+}
+function mat(c,em=0){return new THREE.MeshStandardMaterial({color:c,emissive:c,emissiveIntensity:em,roughness:.5,metalness:.25})}
+function box(w,h,d,c){let m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(c));m.castShadow=true;m.receiveShadow=true;return m}
+function createCity(){
+ const road=box(11,.35,240,0x10182a);road.position.set(0,-.25,-85);scene.add(road);
+ for(let x of [-6.3,6.3]){let wall=box(.3,3,240,0x18294b);wall.position.set(x,1.3,-85);scene.add(wall)}
+ for(let z=5;z>-210;z-=8){
+   for(let x of [-7.8,7.8]){
+    let h=3+Math.random()*11,b=box(3,h,6,0x0d1830);b.position.set(x,h/2-0.2,z);scene.add(b);
+    let strip=box(.06,h*.65,.08,Math.random()>.5?0x32d9ff:0xb04cff);strip.position.set(x>0?x-1.48:x+1.48,h*.55,z-3.03);scene.add(strip);
+   }
+   let line=box(.12,.03,2,0x46dfff);line.position.set(-1.5,.02,z);scene.add(line);line=box(.12,.03,2,0x46dfff);line.position.set(1.5,.02,z);scene.add(line);
+ }
+}
+function createPlayer(){
+ player=new THREE.Group();
+ const c=characters[selected];
+ let body=box(.95,1.25,.7,c.color);body.position.y=1.25;player.add(body);
+ let head=box(.75,.7,.68,0xe7f3ff);head.position.y=2.22;player.add(head);
+ let visor=box(.6,.22,.71,0x091329);visor.position.set(0,2.25,-.36);player.add(visor);
+ for(let x of [-.42,.42]){let leg=box(.24,.85,.28,0x27324c);leg.position.set(x,0.43,0);player.add(leg)}
+ player.position.set(0,0,4);scene.add(player);
+}
+function clearRunObjects(){objects.forEach(o=>scene.remove(o));objects=[]}
+function spawnObstacle(){
+ const type=Math.random();
+ let laneI=Math.floor(Math.random()*3), z=-70;
+ let o;
+ if(type<.35){o=box(2.15,1.35,1.1,0xff365d);o.userData.kind="barrier";o.position.set(lanes[laneI],.68,z)}
+ else if(type<.7){o=box(2.0,2.5,1.0,0x8a48ff);o.userData.kind="wall";o.position.set(lanes[laneI],1.25,z)}
+ else{o=box(2.3,.65,1.0,0xffb52e);o.userData.kind="low";o.position.set(lanes[laneI],2.25,z)}
+ o.userData.hit=false;scene.add(o);objects.push(o);
+}
+function spawnCoin(){
+ const laneI=Math.floor(Math.random()*3),c=box(.45,.45,.18,0xffd43b,1);c.rotation.z=Math.PI/4;c.position.set(lanes[laneI],1.5+Math.random()*.9,-70);c.userData.kind="coin";scene.add(c);objects.push(c);
+}
+function spawnPower(){
+ const laneI=Math.floor(Math.random()*3),types=["shield","magnet","boost"],t=types[Math.floor(Math.random()*types.length)];
+ let c=box(.7,.7,.7,t==="shield"?0x36e6ff:t==="magnet"?0xff4cff:0xff6a32,1);c.position.set(lanes[laneI],1.2,-70);c.userData.kind="power";c.userData.power=t;scene.add(c);objects.push(c);
+}
+function hitTest(o){
+ const dx=Math.abs(o.position.x-player.position.x),dz=Math.abs(o.position.z-player.position.z);
+ if(dx<1.25&&Math.abs(o.position.z-player.position.z)<1.45){
+   if(o.userData.kind==="coin"){
+    coins++;scene.remove(o);objects=objects.filter(x=>x!==o);return;
+   }
+   if(o.userData.kind==="power"){activatePower(o.userData.power);scene.remove(o);objects=objects.filter(x=>x!==o);return}
+   if(o.userData.hit)return;
+   if(sliding&&o.userData.kind==="low")return;
+   if(player.position.y>.9&&o.userData.kind!=="low")return;
+   o.userData.hit=true;
+   if(shield>0){shield=0;scene.remove(o);objects=objects.filter(x=>x!==o);return}
+   hp-=25;document.querySelector("#hp").style.width=hp+"%";document.querySelector("#hpText").textContent=hp;
+   player.position.x+=player.position.x>=0?-0.25:0.25;
+   if(hp<=0)endGame();
+ }
+}
+function activatePower(t){
+ if(t==="shield")shield=7;
+ if(t==="magnet")magnet=8;
+ if(t==="boost")boost=7;
+}
+function useSkill(){
+ if(skillCooldown>0||!running)return;
+ skillCooldown=8;skillTimer=2.8;
+ if(selected===0)skillTimer=3.5;
+ if(selected===1)boost=3.5;
+ if(selected===2)shield=3.5;
+}
+function reset(){
+ clearRunObjects();distance=0;coins=0;hp=100;worldSpeed=.45;spawnT=0;coinT=0;lane=0;targetLane=0;yVel=0;grounded=true;sliding=false;skillTimer=0;skillCooldown=0;shield=0;magnet=0;boost=0;
+ player.position.set(0,0,4);player.rotation.set(0,0,0);
+ document.querySelector("#hp").style.width="100%";document.querySelector("#hpText").textContent="100";
+ document.querySelector("#powerText").textContent="无道具";
+ document.querySelector("#gameover").style.display="none";
+ running=true;document.querySelector("#menu").style.display="none";document.querySelector("#hud").style.display="block";document.querySelector("#skill").style.display="block";document.querySelector("#tip").style.display="block";
+}
+function endGame(){if(!running)return;running=false;document.querySelector("#finalDistance").textContent=Math.floor(distance);document.querySelector("#finalCoins").textContent=coins;document.querySelector("#gameover").style.display="block"}
+function update(dt){
+ if(!running)return;
+ let slow=selected===0&&skillTimer>0?.42:1;
+ let speed=worldSpeed*(boost>0?1.85:1)*slow;
+ distance+=speed*dt*9;
+ worldSpeed=Math.min(.9,worldSpeed+dt*.008);
+ if(skillTimer>0)skillTimer-=dt;if(skillCooldown>0)skillCooldown-=dt;if(shield>0)shield-=dt;if(magnet>0)magnet-=dt;if(boost>0)boost-=dt;
+ spawnT-=dt;coinT-=dt;
+ if(spawnT<=0){spawnObstacle();spawnT=Math.max(.48,1.05-distance/220)}
+ if(coinT<=0){spawnCoin();if(Math.random()<.16)spawnPower();coinT=.45+Math.random()*.3}
+ player.position.x=THREE.MathUtils.lerp(player.position.x,lanes[targetLane],.14);
+ if(!grounded){yVel-=18*dt;player.position.y+=yVel*dt;if(player.position.y<=0){player.position.y=0;grounded=true;yVel=0}}
+ if(sliding){player.scale.y=0.58}else player.scale.y=1;
+ player.rotation.z=THREE.MathUtils.lerp(player.rotation.z,(lanes[targetLane]-player.position.x)*.06,.12);
+ for(const o of [...objects]){
+   o.position.z+=speed*32*dt;
+   if(o.userData.kind==="coin")o.rotation.y+=dt*7;
+   if(o.userData.kind==="power")o.rotation.y+=dt*4;
+   if(magnet>0&&o.userData.kind==="coin"&&o.position.distanceTo(player.position)<12){o.position.x=THREE.MathUtils.lerp(o.position.x,player.position.x,.12);o.position.y=THREE.MathUtils.lerp(o.position.y,player.position.y+1,.12)}
+   hitTest(o);
+   if(o.position.z>12){scene.remove(o);objects=objects.filter(x=>x!==o)}
+ }
+ document.querySelector("#distance").textContent=Math.floor(distance)+" m";
+ document.querySelector("#coins").textContent=coins;
+ document.querySelector("#speed").textContent=(speed/.45).toFixed(1)+"x";
+ let powers=[];if(shield>0)powers.push("护盾");if(magnet>0)powers.push("磁铁");if(boost>0)powers.push("加速");
+ document.querySelector("#powerText").textContent=powers.length?powers.join(" · "):"无道具";
+ document.querySelector("#skillCd").textContent=skillCooldown>0?`冷却 ${skillCooldown.toFixed(1)}s`:"READY · [E]";
+}
+function animate(){
+ requestAnimationFrame(animate);let dt=Math.min(clock.getDelta(),.04);
+ update(dt);
+ camera.position.x=THREE.MathUtils.lerp(camera.position.x,player?player.position.x*.22:0,.08);
+ camera.position.y=THREE.MathUtils.lerp(camera.position.y,4.2+player.position.y*.1,.08);
+ camera.lookAt(player?player.position.x*.15:0,1.4,-15);
+ renderer.render(scene,camera);
+}
+addEventListener("resize",()=>{if(!camera)return;camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+addEventListener("keydown",e=>{
+ if(keys[e.code])return;keys[e.code]=true;
+ if(e.code==="ArrowLeft"||e.code==="KeyA")targetLane=Math.max(0,targetLane-1);
+ if(e.code==="ArrowRight"||e.code==="KeyD")targetLane=Math.min(2,targetLane+1);
+ if(e.code==="Space"&&grounded){grounded=false;yVel=8.8}
+ if(e.code==="KeyS")sliding=true;
+ if(e.code==="KeyE")useSkill();
+});
+addEventListener("keyup",e=>{keys[e.code]=false;if(e.code==="KeyS")sliding=false});
+document.querySelector("#start").onclick=()=>{reset();document.querySelector("#skillName").textContent=characters[selected].skill};
+document.querySelector("#restart").onclick=()=>{reset();document.querySelector("#skillName").textContent=characters[selected].skill};
+document.querySelector("#skillBtn").onclick=useSkill;
+init3D();animate();
+</script>
+</body>
+</html>
