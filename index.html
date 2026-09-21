@@ -1,9 +1,8 @@
-<link rel="stylesheet" href="./style.css" />
-<script src="./script.js"></script>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>贪吃蛇</title>
   <style>
     body {
@@ -14,14 +13,21 @@
       background: #f5f5f5;
       margin: 0;
       padding: 20px;
+      touch-action: manipulation;
     }
     h1 { margin: 0 0 10px; }
     #score { font-size: 20px; margin-bottom: 10px; }
-    canvas { border: 2px solid #333; background: #111; }
+    canvas {
+      border: 2px solid #333;
+      background: #111;
+      touch-action: none;
+      max-width: 100%;
+      height: auto;
+    }
     button {
       margin-top: 12px;
-      padding: 8px 24px;
-      font-size: 16px;
+      padding: 12px 32px;
+      font-size: 18px;
       cursor: pointer;
     }
   </style>
@@ -91,7 +97,7 @@
       ctx.fillText('游戏结束', 200, 185);
       ctx.font = '20px sans-serif';
       ctx.fillText('最终分数：' + score, 200, 225);
-      ctx.fillText('按空格键重新开始', 200, 265);
+      ctx.fillText('按空格键或轻点屏幕重新开始', 200, 265);
     }
 
     function draw() {
@@ -141,6 +147,29 @@
         if (!(dirs[k].x === -dir.x && dirs[k].y === -dir.y)) nextDir = dirs[k];
       }
     });
+
+    // 触屏模式：在画布上滑动控制方向，游戏结束后轻点重新开始
+    let touchStart = null;
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    }, { passive: false });
+    canvas.addEventListener('touchend', e => {
+      if (!touchStart) return;
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      const dx = t.clientX - touchStart.x;
+      const dy = t.clientY - touchStart.y;
+      touchStart = null;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 20) {
+        if (over) restart();
+        return;
+      }
+      const d = Math.abs(dx) > Math.abs(dy)
+        ? { x: Math.sign(dx), y: 0 }
+        : { x: 0, y: Math.sign(dy) };
+      if (!(d.x === -dir.x && d.y === -dir.y)) nextDir = d;
+    }, { passive: false });
 
     document.getElementById('restart').onclick = restart;
 
